@@ -20,7 +20,17 @@ static DWORD FindDBDProcess() {
     CloseHandle(hSnapshot);
     return pid;
 }
+bool DeadByDaylight::CheckGameAlive() {
 
+    HANDLE handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, process_id);
+    if (!handle) return false;
+
+    DWORD exitCode;
+    bool exists = GetExitCodeProcess(handle, &exitCode) && exitCode == STILL_ACTIVE;
+    CloseHandle(handle);
+    return exists;
+
+}
 	HANDLE DeadByDaylight::GetProcessBase()
 	{
         while (process_id == 0) {

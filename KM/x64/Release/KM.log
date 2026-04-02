@@ -1,6 +1,6 @@
 ﻿  Building 'KM' with toolset 'WindowsKernelModeDriver10.0' and the 'Universal' target platform.
   Stamping x64\Release\KM.inf
-  Stamping [Version] section with DriverVer=04/02/2026,13.37.6.988
+  Stamping [Version] section with DriverVer=04/02/2026,14.21.0.203
   driver.cpp
   KM.vcxproj -> C:\Users\Wojtek\source\repos\DeadByDaylight\x64\Release\KM.sys
   Driver is 'Universal'.

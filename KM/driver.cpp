@@ -130,7 +130,7 @@ NTSTATUS ctl_io(PDEVICE_OBJECT device_obj, PIRP irp) {
                 goto End;
             }
 
-            PVOID source = MmGetSystemAddressForMdlSafe(mdl, NormalPagePriority | MdlMappingNoExecute);
+        /*    PVOID source = MmGetSystemAddressForMdlSafe(mdl, NormalPagePriority | MdlMappingNoExecute);
             if (!source) {
                 MmUnlockPages(mdl);
                 KeUnstackDetachProcess(&state);
@@ -139,9 +139,9 @@ NTSTATUS ctl_io(PDEVICE_OBJECT device_obj, PIRP irp) {
                 ObDereferenceObject(proc);
                 status = STATUS_INSUFFICIENT_RESOURCES;
                 goto End;
-            }
+            }*/
 
-            RtlCopyMemory(buffer, source, length);
+            RtlCopyMemory(buffer, request->src, length);
 
 
             MmUnlockPages(mdl);

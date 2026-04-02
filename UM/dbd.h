@@ -15,6 +15,7 @@ public:
 	HANDLE handle=0;
 	DWORD process_id=0;
 	HANDLE GetProcessBase();
+	bool CheckGameAlive();
 	DeadByDaylight();
 	~DeadByDaylight();
 	template<class T>
