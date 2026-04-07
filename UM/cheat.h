@@ -4,10 +4,15 @@
 #include "engine.h"
 #include "offsets.h"
 #include "methods.h"
+#include "structs.h"
+
+inline bool SkillCheckThreadAlive = false;
 inline uintptr_t LocalPawn=0;
 inline uintptr_t PlayerController=0;
+inline uintptr_t Hatch=0;
 inline uintptr_t ASurvivorKlass=0;
 inline uintptr_t AGeneratorKlass=0;
+inline uintptr_t AHatch=0;
 inline uintptr_t ATotemKlass=0;
 inline uintptr_t LastPersistentLevel = 0;
 inline uintptr_t AKillerKlass=0;
@@ -19,3 +24,4 @@ const char* TranslateCheatState();
 void RenderMenu();
 void RenderESP();
 void CheatThread();
+void SkillcheckThread();

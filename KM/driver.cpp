@@ -145,6 +145,14 @@ NTSTATUS ctl_io(PDEVICE_OBJECT device_obj, PIRP irp) {
                 *(ULONG*)request->dst = stackvar;
                 goto Finish;
             }
+            else if (length == 1)
+            {
+                unsigned char stackvar = 0;
+                stackvar = *(unsigned char*)request->src;
+                KeUnstackDetachProcess(&state);
+                *(unsigned char*)request->dst = stackvar;
+                goto Finish;
+            }
             else
             {
                 goto ReadBig;

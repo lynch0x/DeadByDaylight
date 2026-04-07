@@ -28,75 +28,7 @@ static LRESULT CALLBACK window_procedure(HWND window, UINT message, WPARAM w_par
 	return DefWindowProc(window, message, w_param, l_param);
 }
 
-//void sendSpaceCommand()
-//{
-//    INPUT inputs[2] = {};
-//
-//    inputs[0].type = INPUT_KEYBOARD;
-//    inputs[0].ki.wVk = VK_SPACE;
-//
-//    inputs[1].type = INPUT_KEYBOARD;
-//    inputs[1].ki.wVk = VK_SPACE;
-//    inputs[1].ki.dwFlags = KEYEVENTF_KEYUP;
-//
-//    SendInput(2, inputs, sizeof(INPUT));
-//}
-//bool IsProbablyValidAddress(uintptr_t addr)
-//{
-//	return (addr >= 0x10000 && addr <= 0x00007FFFFFFFFFFF);
-//}
-//bool IsA(DeadByDaylight& dbd,uintptr_t actor, uintptr_t klass)
-//{
-//	uintptr_t temp = dbd.Read<uintptr_t>(actor + 0x10);
-//		if (temp == klass) {
-//			return true;
-//		}
-//		temp = dbd.Read<uintptr_t>(temp + 0x60);
-//		if (temp == klass) {
-//			return true;
-//		}
-//		temp = dbd.Read<uintptr_t>(temp + 0x60);
-//		if (temp == klass) {
-//			return true;
-//		}
-//	return false;
-//}
-//uintptr_t FindSingleActorOfType(DeadByDaylight& dbd, uintptr_t level, uintptr_t klass, unsigned int* index)
-//{
-//
-//	unsigned int actorsCount = dbd.Read<unsigned int>(level + 0x00C0 + 0x8);
-//	if (actorsCount > 100 && actorsCount < 3000) {
-//		uintptr_t actorsArray = dbd.Read<uintptr_t>(level + 0x00C0);
-//		if (index) {
-//			if (*index != 0) {
-//				uintptr_t actor = dbd.Read<uintptr_t>(actorsArray + (*index * 0x8));
-//				if (IsA(dbd, actor, klass)) {
-//					return actor;
-//				}
-//			}
-//		}
-//		for (unsigned int i = 0; i < actorsCount; i++)
-//		{
-//
-//			uintptr_t actor = dbd.Read<uintptr_t>(actorsArray + i * 0x8);
-//
-//			if (IsA(dbd, actor, klass)) {
-//				if(index)
-//					*index = i;
-//
-//				return actor;
-//			}
-//		}
-//	}
-//	return 0;
-//}
-//
-//
-//bool IsKillerCarryingMe(DeadByDaylight& dbd, uintptr_t mypawn)
-//{
-//	uintptr_t carried = dbd.Read<uintptr_t>(killer + 0x1A68);
-//	return mypawn == carried;
-//}
+
 
 
 INT WINAPI WinMain(HINSTANCE instance, HINSTANCE, PSTR, INT cmd_show) 
@@ -112,6 +44,7 @@ INT WINAPI WinMain(HINSTANCE instance, HINSTANCE, PSTR, INT cmd_show)
 	{
 		std::thread t(CheatThread);
 		t.detach();
+	
 	}
 	WNDCLASSEXW wc = {0};
 	wc.cbSize = sizeof(WNDCLASSEXW);
@@ -190,7 +123,7 @@ INT WINAPI WinMain(HINSTANCE instance, HINSTANCE, PSTR, INT cmd_show)
 		}
 		if (shouldQuit)break;
 
-		if (GetAsyncKeyState(VK_INSERT) & 1) {
+	/*	if (GetAsyncKeyState(VK_INSERT) & 1) {
 
 			showMenu = !showMenu;
 
@@ -202,7 +135,7 @@ INT WINAPI WinMain(HINSTANCE instance, HINSTANCE, PSTR, INT cmd_show)
 				SetWindowLong(window, GWL_EXSTYLE,
 					WS_EX_TOPMOST | WS_EX_TRANSPARENT | WS_EX_LAYERED);
 			}
-		}
+		}*/
 		ImGui_ImplDX11_NewFrame();
 		ImGui_ImplWin32_NewFrame();
 		ImGui::NewFrame();
