@@ -1,0 +1,10 @@
+# Build output
+x64/
+.vs/
+**/*.obj
+**/*.pdb
+**/*.iobj
+**/*.ipdb
+**/*.log
+**/*.inf
+**/*.tlog
