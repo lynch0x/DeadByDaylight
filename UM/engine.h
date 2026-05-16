@@ -48,7 +48,7 @@ public:
 	double                                        W;
 	FVector Ro(const FVector& V) const
 	{
-		// Wz�r: q * v * q^-1 (uproszczony do formy bez pe�nego mno�enia quat�w)
+		// Wz�r: q * v * q^-1 (uproszczony do formy bez pe�nego mno�enia quat�w)
 		FVector Q;
 		Q.X = X;
 		Q.Y = Y;
@@ -79,8 +79,8 @@ public:
 };
 struct FString
 {
-	wchar_t* Data;  // wska�nik do tablicy znak�w UTF-16
-	int32_t   Count; // liczba znak�w
+	wchar_t* Data;  // wska�nik do tablicy znak�w UTF-16
+	int32_t   Count; // liczba znak�w
 	int32_t   MaxNum;
 };
 struct FVector2D final
@@ -114,35 +114,140 @@ public:
 
 template<class T>
 class TArray {
-private:
-    void* Data;
-
 public:
-
+	void* Data;
 	int Length;
+	int Max;
+	DeadByDaylight* dbd;
     TArray() : Data(nullptr), Length(0) {}
 
-    TArray(DeadByDaylight* dbd, unsigned __int64 ptr) {
-        Data = nullptr;
-        Length = dbd->Read<int>(ptr + 0x8);
-        if (Length > 0) {
-            int sizeBytes = Length * sizeof(T);
-            Data = malloc(sizeBytes);
-      
-            dbd->ReadRaw(dbd->Read<uintptr_t>(ptr), Data, sizeBytes);
-        }
+    TArray(DeadByDaylight* _dbd, unsigned __int64 ptr) {
+		dbd = _dbd;
+		dbd->ReadRaw(ptr, &Data, 16);
+		// sanity: przy złym ptr potrafi wyjść kosmiczna długość i wywalić proces na malloc/ReadRaw
+		if (Length <= 0 || Length > Max || !Data ) {
+		
+			Data = 0;
+			Length = 0;
+			return;
+		}
+
+	
+		uintptr_t dataPtr = (uintptr_t)Data;
+		int sizeBytes = Length * sizeof(T);
+		Data = malloc(sizeBytes);
+		if (!Data) {
+			Length = 0;
+			return;
+		}
+
+		dbd->ReadRaw(dataPtr, Data, sizeBytes);
     }
 
     ~TArray() {
         if (Data) {
-            free(Data);
+          // free(Data);
+			
+				free(Data);
+			
         }
     }
 
-    T GetAtIndex(int index) {
+    T GetAtIndex(int index) const {
+
+		if (index < 0 || index >= Length || index > Max)return {};
         return *(T*)((uintptr_t)Data + (index * sizeof(T)));
     }
 };
+template<class T>
+class TArrayNew {
+public:
+	void* Data = nullptr;
+	int          Length = 0;
+	int          Max = 0;
+	uint64_t     page = 0;          // ← inicjalizacja w miejscu deklaracji
+	DeadByDaylight* dbd = nullptr;
+
+	// Domyślny konstruktor – trywialne zerowanie
+	TArrayNew() = default;
+
+	TArrayNew(DeadByDaylight* _dbd, unsigned __int64 ptr) : dbd(_dbd)
+	{
+		struct { void* data; int length; int max; } raw{};
+		dbd->ReadRaw(ptr, &raw, sizeof(raw));
+		Data = raw.data;
+		Length = raw.length;
+		Max = raw.max;
+
+		if (Length <= 0 || Length > Max || !Data)
+		{
+			Data = nullptr; Length = 0; return;
+		}
+
+		const uintptr_t dataPtr = reinterpret_cast<uintptr_t>(Data);
+		const int       sizeBytes = Length * static_cast<int>(sizeof(T));
+		const uintptr_t page_base = dataPtr & PAGE_MASK;
+		const uintptr_t page_offset = dataPtr - page_base;
+		page = page_base;
+
+		const bool crossPage =
+			(page_offset + static_cast<size_t>(sizeBytes)) > PAGE_SIZE;
+
+		if (crossPage)
+		{
+			// ── Klucz cache = dokładny adres wirtualny bufora ─────────────
+			// (nie page_base, bo ten sam page może hostować różne bufory)
+			uint64_t mapped = dbd->FindMapping(dataPtr);
+			if (!mapped)
+			{
+				const uint64_t phys =
+					dbd->drv.TranslateVirtualAddress(dbd->dtb, dataPtr);
+				if (!phys) { Data = nullptr; Length = 0; return; }
+
+				mapped = dbd->drv.MapBuffer(phys, sizeBytes, 0);
+				if (!mapped) { Data = nullptr; Length = 0; return; }
+
+				{
+					std::lock_guard lock(dbd->cacheLock);
+					dbd->mappings[dataPtr] = mapped;   // ← klucz = dataPtr
+				}
+			}
+
+			Data = reinterpret_cast<void*>(mapped);
+			return;
+		}
+
+		// ── Single-page: klucz cache = page_base (bez zmian) ─────────────
+		/*uint64_t mapped_page = dbd->FindMapping(page_base);
+		if (!mapped_page)
+		{
+			const uint64_t phys =
+				dbd->drv.TranslateVirtualAddress(dbd->dtb, page_base);
+			if (!phys) { Data = nullptr; Length = 0; return; }
+
+			mapped_page = dbd->drv.MapBuffer(phys, PAGE_SIZE, 0);
+			if (!mapped_page) { Data = nullptr; Length = 0; return; }
+
+			{
+				std::lock_guard lock(dbd->cacheLock);
+				dbd->mappings[page_base] = mapped_page;
+			}
+		}*/
+
+	//	Data = reinterpret_cast<void*>(mapped_page + page_offset);
+		//if (!Data) { Length = 0; }
+	}
+	~TArrayNew() = default;   // nic nie zwalniamy – lifetime należy do dbd
+
+	T GetAtIndex(int index) const
+	{
+		if (!Data || index < 0 || index >= Length || index >= Max)
+			return {};
+		return *reinterpret_cast<const T*>(
+			reinterpret_cast<uintptr_t>(Data) + index * sizeof(T));
+	}
+};
+
 class FName final
 {
 public:
@@ -185,4 +290,5 @@ public:
 
     uintptr_t GetByName(DeadByDaylight* dbd, const char*);
     void GetManyByNames(DeadByDaylight* dbd, SearchKey* keys, unsigned __int16 count);
+    uintptr_t GetByIndex(DeadByDaylight* dbd, unsigned int index);
 };

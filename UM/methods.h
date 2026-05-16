@@ -1,5 +1,5 @@
 #pragma once
-#include <string>
+#include "shared.h"
 #pragma region Calculations
 #define UCONST_Pi			3.1415926
 #define URotationToRadians  UCONST_Pi / 180
@@ -39,18 +39,20 @@ extern FVector VectorSubtract(FVector va, FVector vb);
 
 inline void GetAxes(FRotator R, FVector& X, FVector& Y, FVector& Z)
 {
-	X = RotationToVector(R);
-	Normalize(X);
-	R.Yaw += 89.8f;
-	FRotator R2 = R;
-	R2.Pitch = 0.0f;
-	Y = RotationToVector(R2);
-	Normalize(Y);
-	Y.Z = 0.0f;
-	R.Yaw -= 89.8f;
-	R.Pitch += 89.8f;
-	Z = RotationToVector(R);
-	Normalize(Z);
+	float fYaw = R.Yaw * (UCONST_Pi / 180.f);
+	float fPitch = R.Pitch * (UCONST_Pi / 180.f);
+
+	float sp = sinf(fPitch), cp = cosf(fPitch);
+	float sy = sinf(fYaw), cy = cosf(fYaw);
+
+	// Forward — bez Normalize, bez RotationToVector
+	X = { cp * cy, cp * sy, sp };
+
+	// Right — dokładnie 90° w osi yaw
+	Y = { -sy, cy, 0.f };
+
+	// Up — iloczyn wektorowy X × Y
+	Z = { -sp * cy, -sp * sy, cp };
 }
 
 inline FVector VectorSubtract(FVector va, FVector vb)
@@ -70,24 +72,49 @@ float inline Dot(const FVector& V1, const FVector& V2)
 }
 
 
-static FVector2D WorldToScreenPoint(FVector Location, FMinimalViewInfo cam_cache)
+inline bool WorldToScreenPoint(const FVector& Location, const FMinimalViewInfo& cam_cache, FVector2D& OutScreen)
 {
-	FVector2D Return;
+	FVector Delta = VectorSubtract(Location, cam_cache.Location);
 
-	FVector AxisX, AxisY, AxisZ, Delta, Transformed;
-	GetAxes(cam_cache.Rotation, AxisX, AxisY, AxisZ);
+	// Najpierw tylko forward — najtańszy early exit
+	float fYaw = cam_cache.Rotation.Yaw * (UCONST_Pi / 180.f);
+	float fPitch = cam_cache.Rotation.Pitch * (UCONST_Pi / 180.f);
 
-	Delta = VectorSubtract(Location, cam_cache.Location);
-	Transformed.X = Dot(Delta, AxisY);
-	Transformed.Y = Dot(Delta, AxisZ);
-	Transformed.Z = Dot(Delta, AxisX);
+	float sp = sinf(fPitch), cp = cosf(fPitch);
+	float sy = sinf(fYaw), cy = cosf(fYaw);
 
-	if (Transformed.Z < 1.00f)
-		Transformed.Z = 1.00f;
-	Return.X = (screenWidth / 2) + Transformed.X * ((screenWidth / 2) / tan(cam_cache.FOV * UCONST_Pi / 360.0f)) / Transformed.Z;
-	Return.Y = (screenHeight / 2) + -Transformed.Y * ((screenWidth / 2) / tan(cam_cache.FOV * UCONST_Pi / 360.0f)) / Transformed.Z;
+	// Z (głębokość) = dot(Delta, Forward)
+	float z = Delta.X * (cp * cy)
+		+ Delta.Y * (cp * sy)
+		+ Delta.Z * sp;
 
-	return Return;
+	if (z < 1.f)
+		return false; // za kamerą — exit przed liczeniem Right/Up i tan()
+
+	float f = (screenWidth * 0.5f) / tanf(cam_cache.FOV * (UCONST_Pi / 360.f));
+	float fOverZ = f / z;
+
+	// X (prawo) = dot(Delta, Right)
+	float x = Delta.X * (-sy)
+		+ Delta.Y * cy;
+	// Y.Z = 0 więc Delta.Z pomijamy
+
+	OutScreen.X = screenWidth * 0.5f + x * fOverZ;
+
+	if (OutScreen.X < 0.f || OutScreen.X > screenWidth)
+		return false; // poza ekranem poziomo — exit przed liczeniem Up
+
+	// Y (góra) = dot(Delta, Up)
+	float y = Delta.X * (-sp * cy)
+		+ Delta.Y * (-sp * sy)
+		+ Delta.Z * cp;
+
+	OutScreen.Y = screenHeight * 0.5f - y * fOverZ;
+
+	if (OutScreen.Y < 0.f || OutScreen.Y > screenHeight)
+		return false;
+
+	return true;
 }
 #pragma endregion
 inline bool IsA(uintptr_t actor, uintptr_t klass)
@@ -101,26 +128,32 @@ inline bool IsA(uintptr_t actor, uintptr_t klass)
 		}
 		temp = dbd->Read<uintptr_t>(temp + 0x60);
 	}
+	
 	return false;
 }
 inline bool IsWorldLoaded(uintptr_t GWorld)
 {
-	uintptr_t GameState = dbd->Read<uintptr_t>(GWorld + 0x0188);
+	uintptr_t GameState = dbd->Read<uintptr_t>(GWorld + 0x01D8);
 	if (!GameState)return false;
-	return dbd->Read<double>(GameState + 0x0308) > 60;
+	auto time = dbd->Read<int>(GameState + 0x0360);
+	return time > 10;
 }
-extern uintptr_t PlayerController;
-inline FMinimalViewInfo GetMyPov() {
 
-	uintptr_t cameraManager = dbd->Read<uintptr_t>(PlayerController + 0x0398);
+inline FMinimalViewInfo GetMyPov(uintptr_t playercontroller) {
 
-	FCameraCacheEntry cache = dbd->Read<FCameraCacheEntry>(cameraManager + 0x1400);
+	uintptr_t cameraManager = dbd->Read<uintptr_t>(playercontroller + 0x03B0);
+	if (cameraManager) {
+		FCameraCacheEntry* cache = dbd->ReadAsReference<FCameraCacheEntry>(cameraManager + 0x15A0);
 
-	return cache.POV;
+		return cache->POV;
+	}
+	return {};
 }
+
 inline FVector GetActorLocation(uintptr_t pawn) {
-	uintptr_t rootComponent = dbd->Read<uintptr_t>(pawn + 0x01C8);
-	return dbd->Read<FVector>(rootComponent + 0x0160);
+	uintptr_t rootComponent = dbd->Read<uintptr_t>(pawn + 0x01E0);
+	if(rootComponent)
+	return dbd->Read<FVector>(rootComponent + 0x0178);
 }
 inline bool IsDeadOrInParadise(uintptr_t survivor) {
 	uintptr_t healthComponent = dbd->Read<uintptr_t>(survivor + 0x18A0);
@@ -134,25 +167,110 @@ inline bool IsDeadOrInParadise(uintptr_t survivor) {
 	return loc;
 }
 inline uintptr_t GetPlayerState(uintptr_t pawn) {
-	return dbd->Read<uintptr_t>(pawn + 0x02F8);
+	return dbd->Read<uintptr_t>(pawn + 0x0310);
 }
-inline std::string GetUsername(uintptr_t playerState)
+inline std::wstring_view GetUsername(uintptr_t playerState)
 {
-	auto str = dbd->Read<FString>(playerState + 0x0378);
-	if (str.Count <= 0)
+	const FString& str =
+		dbd->Read<FString>(playerState + 0x390);
+
+	if (!str.Data)
 		return {};
 
-	std::wstring ws(str.Count, L'\0');
-	dbd->ReadRaw((uintptr_t)str.Data, ws.data(), str.Count * sizeof(wchar_t));
+	if (str.Count <= 0 || str.Count > 50)
+		return {};
 
-	return std::string(ws.begin(), ws.end());
+	const uintptr_t address =
+		reinterpret_cast<uintptr_t>(str.Data);
+
+	const uintptr_t page_base =
+		address & PAGE_MASK;
+
+	const uintptr_t page_offset =
+		address - page_base;
+
+	uint64_t mapped_page =
+		dbd->FindMapping(page_base);
+
+	if (!mapped_page)
+	{
+		const uint64_t phys =
+			dbd->drv.TranslateVirtualAddress(
+				dbd->dtb,
+				page_base
+			);
+
+		if (!phys)
+			return {};
+
+		mapped_page =
+			dbd->drv.MapBuffer(
+				phys,
+				PAGE_SIZE,
+				0
+			);
+
+		if (!mapped_page)
+			return {};
+
+		{
+			std::lock_guard lock(dbd->cacheLock);
+			dbd->mappings[page_base] = mapped_page;
+		}
+	}
+
+	const wchar_t* text =
+		reinterpret_cast<const wchar_t*>(
+			mapped_page + page_offset
+			);
+
+	size_t len = str.Count;
+
+	// FString zwykle zawiera trailing '\0'
+	if (len > 0 && text[len - 1] == L'\0')
+		--len;
+
+	return std::wstring_view(text, len);
+
+}
+inline std::string Utf8FromView(const std::wstring_view wv)
+{
+	if (wv.empty() || wcsstr(wv.data(),L"None")!=0 )return {};
+
+	int size = WideCharToMultiByte(
+		CP_UTF8,
+		0,
+		wv.data(),
+		(int)wv.size(),
+		nullptr,
+		0,
+		nullptr,
+		nullptr
+	);
+
+	std::string result(size, 0);
+
+	WideCharToMultiByte(
+		CP_UTF8,
+		0,
+		wv.data(),
+		(int)wv.size(),
+		result.data(),
+		size,
+		nullptr,
+		nullptr
+	);
+
+	return result;
 }
 inline FVector GetBoneWorldPosition(uintptr_t Mesh, int BoneIndex)
 {
-	TArray<FTransform> BoneArray(dbd,Mesh + 0x680);
+	FTransform CTW = dbd->Read<FTransform>(Mesh + 0x220);
+	if (CTW.Translation.X <= 0)return {};
+	TArray<FTransform> BoneArray(dbd,Mesh + 0x678+0x30);
 	if (BoneArray.Length <= 0)return FVector::ZERO();
 	FTransform Bone = BoneArray.GetAtIndex(BoneIndex);
-	FTransform CTW = dbd->Read<FTransform>(Mesh + 0x210);
+	
 
 	FVector scaled = CTW.Scale3D * Bone.Translation;
 	FVector rotated = CTW.Rotation.Ro(scaled);
@@ -165,33 +283,37 @@ inline void DrawBoneLine(uintptr_t mesh, FMinimalViewInfo& POV, int a, int b,ImU
 	if (WorldPositionA == FVector::ZERO())return;
 	FVector WorldPositionB = GetBoneWorldPosition(mesh, b);
 	if (WorldPositionB == FVector::ZERO())return;
-	FVector2D ScreenPositionA = WorldToScreenPoint(WorldPositionA, POV);
-	FVector2D ScreenPositionB = WorldToScreenPoint(WorldPositionB, POV);
-	if (ScreenPositionA.X > 0 && ScreenPositionB.X > 0)
+	FVector2D ScreenPositionA; 
+	FVector2D ScreenPositionB; 
+	if (WorldToScreenPoint(WorldPositionA, POV, ScreenPositionA) && WorldToScreenPoint(WorldPositionB, POV, ScreenPositionB))
 		ImGui::GetBackgroundDrawList()->AddLine(ImVec2(ScreenPositionA.X, ScreenPositionA.Y), ImVec2(ScreenPositionB.X, ScreenPositionB.Y),color);
 }
-extern std::vector<BoneCacheEntry> boneCache;
+
 inline BoneCacheEntry* FindCache(uintptr_t actor)
 {
-	for (auto& entry : boneCache)     
+	for (size_t i = 0; i < boneCacheSize; i++)
 	{
-		if (entry.actor == actor)
-			return &entry;     
+		if (boneCache[i].actor == actor)
+			return &boneCache[i];
 	}
 	return nullptr;
 }
 inline BoneCacheEntry* AddCache(uintptr_t actor)
 {
-	BoneCacheEntry newEntry{};
-	newEntry.actor = actor;
-	std::fill_n(newEntry.bones, 16, -1);
-	boneCache.push_back(newEntry);
-	return &boneCache.back();   // bezpieczne � nie robimy nic po tym wywo�aniu
+	if (boneCacheSize >= boneCache.size())
+		return nullptr; // albo nadpisuj najstarszy
+
+	BoneCacheEntry& entry = boneCache[boneCacheSize++];
+
+	entry.actor = actor;
+	std::fill_n(entry.bones, 16, -1);
+
+	return &entry;
 }
-static void DrawSkeleton(uintptr_t actor, FMinimalViewInfo& POV,ImU32 color)
+inline void DrawSkeleton(uintptr_t actor, FMinimalViewInfo& POV,ImU32 color)
 {
 
-	uintptr_t Mesh = dbd->Read<uintptr_t>(actor + 0x0360);
+	uintptr_t Mesh = dbd->Read<uintptr_t>(actor + 0x0370);
 	BoneCacheEntry* cache = FindCache(actor);
 	if (!cache)
 	{
@@ -205,9 +327,9 @@ static void DrawSkeleton(uintptr_t actor, FMinimalViewInfo& POV,ImU32 color)
 		};
 
 
-		uintptr_t SkeletalMesh = dbd->Read<uintptr_t>(Mesh + 0x608);
+		uintptr_t SkeletalMesh = dbd->Read<uintptr_t>(Mesh + 0x0628);
 
-		auto RawRefBoneArray = TArray<FMeshBoneInfo>(dbd, SkeletalMesh + 0x2E8);
+		auto RawRefBoneArray = TArray<FMeshBoneInfo>(dbd, SkeletalMesh + 0x0358+8);
 		if (RawRefBoneArray.Length > 0)
 		{
 			FNamesPool namesPool;
@@ -278,7 +400,7 @@ static void DrawSkeleton(uintptr_t actor, FMinimalViewInfo& POV,ImU32 color)
 	
 }
 
-static void sendSpaceCommand()
+inline void sendSpaceCommand()
 {
     INPUT inputs[2] = {};
 
@@ -291,17 +413,16 @@ static void sendSpaceCommand()
 
     SendInput(2, inputs, sizeof(INPUT));
 }
-extern uintptr_t LocalPawn;
-extern std::vector<uintptr_t> killers;
-inline bool IsKillerCarryingMe()
-{
-	for (int i = 0; i < killers.size(); i++)
-	{
-		uintptr_t carried = dbd->Read<uintptr_t>(killers.at(i) + 0x1A68);
-		return LocalPawn == carried;
-	}
-	return false;
-}
+
+//inline bool IsKillerCarryingMe()
+//{
+//	for (int i = 0; i < killers.size(); i++)
+//	{
+//		uintptr_t carried = dbd->Read<uintptr_t>(killers.at(i) + 0x1A68);
+//		return LocalPawn == carried;
+//	}
+//	return false;
+//}
 inline void DistanceText(std::string& str, FVector& a, FVector& b) {
 	str += " [";
 	str += std::to_string((int)FVector::calculateDistance(a, b) / 100);
@@ -312,7 +433,7 @@ inline void DrawESPText(const char* tmp, ImVec2 pos, ImU32 color) {
 	ImU32 outline = IM_COL32(0, 0, 0, 255); // czarny
 
 
-	// ile pikseli grubo�ci obrysu
+	// ile pikseli grubo�ci obrysu
 	float thickness = 2.0f;
 
 	// obrys (w 8 kierunkach)
@@ -325,6 +446,6 @@ inline void DrawESPText(const char* tmp, ImVec2 pos, ImU32 color) {
 	ImGui::GetBackgroundDrawList()->AddText(ImVec2(pos.x - thickness, pos.y + thickness), outline, tmp);
 	ImGui::GetBackgroundDrawList()->AddText(ImVec2(pos.x + thickness, pos.y + thickness), outline, tmp);
 
-	// w�a�ciwy tekst
+	// w�a�ciwy tekst
 	ImGui::GetBackgroundDrawList()->AddText(pos, color, tmp);
 }

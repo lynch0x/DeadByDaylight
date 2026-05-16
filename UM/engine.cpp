@@ -1,4 +1,7 @@
 #include "engine.h"
+#include <vector>
+
+
 
 
 uintptr_t FNamesPool::Pool = 0;
@@ -33,7 +36,17 @@ std::string FNamesPool::GetAtIndex(DeadByDaylight* dbd, int actor_id)
 
     return std::string(buffer);
 }
-
+uintptr_t GObjectsPool::GetByIndex(DeadByDaylight* dbd, unsigned int index)
+{
+    if (!Pool) {
+        if (dbd->base == 0) return 0;
+        Pool = dbd->Read<uintptr_t>(dbd->base + Offsets::GObjects);
+    }
+    uintptr_t objArray = dbd->Read<uintptr_t>(Pool);
+    uintptr_t objectItem = objArray + (index * 0x18);
+    uintptr_t objectPtr = dbd->Read<uintptr_t>(objectItem);
+    return objectPtr;
+}
 uintptr_t GObjectsPool::GetByName(DeadByDaylight* dbd, const char* name)
 {
     if (!Pool) {
@@ -42,13 +55,13 @@ uintptr_t GObjectsPool::GetByName(DeadByDaylight* dbd, const char* name)
     }
 
 
-    uintptr_t objArray = dbd->Read<uintptr_t>(Pool);
+
 
     FNamesPool namesPool;
     for (int i = 0; i < 86895; i++)
     {
-        uintptr_t objectItem = objArray + (i * 0x18);
-        uintptr_t objectPtr = dbd->Read<uintptr_t>(objectItem);
+        
+        uintptr_t objectPtr = GetByIndex(dbd, i);
         if (!objectPtr) continue;
 
         int id = dbd->Read<int>(objectPtr + 0x18);
@@ -71,23 +84,49 @@ void GObjectsPool::GetManyByNames(DeadByDaylight* dbd, SearchKey* keys, unsigned
     uintptr_t objArray = dbd->Read<uintptr_t>(Pool);
 
     FNamesPool namesPool;
-    for (int i = 4000; i < 86895; i++)
+    unsigned __int16 remaining = 0;
+    for (unsigned __int16 j = 0; j < count; j++)
     {
-        uintptr_t objectItem = objArray + (i * 0x18);
-        uintptr_t objectPtr = dbd->Read<uintptr_t>(objectItem);
-        if (!objectPtr) continue;
+        if (*keys[j].Return == 0)
+            remaining++;
+    }
+    if (remaining == 0)
+        return;
 
-        int id = dbd->Read<int>(objectPtr + 0x18);
-        std::string rname = namesPool.GetAtIndex(dbd, id);
-        for (unsigned __int16 j = 0; j < count; j++)
+    constexpr int startIndex = 4000;
+    constexpr int endIndex = 86895;
+    constexpr int stride = 0x18;
+    constexpr int chunkSize = 512;
+    std::vector<unsigned char> chunk;
+    chunk.resize((size_t)chunkSize * stride);
+
+    for (int baseIndex = startIndex; baseIndex < endIndex && remaining > 0; baseIndex += chunkSize)
+    {
+        const int toRead = ((baseIndex + chunkSize) <= endIndex) ? chunkSize : (endIndex - baseIndex);
+        const uintptr_t chunkAddr = objArray + (uintptr_t)baseIndex * stride;
+        dbd->ReadRaw(chunkAddr, chunk.data(), toRead * stride);
+
+        for (int off = 0; off < toRead && remaining > 0; off++)
         {
-            auto key = keys[j];
-            if (strcmp(key.Key, rname.c_str()) == 0) {
-                *key.Return = objectPtr;
-            }
+            uintptr_t objectPtr = *(uintptr_t*)(chunk.data() + (size_t)off * stride);
+            if (!objectPtr) continue;
+            if (!dbd->Read<uintptr_t>(objectPtr)) continue;
 
+            int id = dbd->Read<int>(objectPtr + 0x18);
+            std::string rname = namesPool.GetAtIndex(dbd, id);
+            if (rname.empty() || rname == "None") continue;
+
+            for (unsigned __int16 j = 0; j < count; j++)
+            {
+                auto& key = keys[j];
+                if (*key.Return != 0) continue;
+                if (strcmp(key.Key, rname.c_str()) == 0)
+                {
+                    *key.Return = objectPtr;
+                    if (remaining > 0) remaining--;
+                }
+            }
         }
-       
     }
     
 }

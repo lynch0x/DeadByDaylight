@@ -10,8 +10,7 @@ public:
 	float                                         ProgressRate;                                      // 0x0010(0x0004)(ZeroConstructor, Transient, IsPlainOldData, NoDestructor, HasGetValueTypeHash, NativeAccessSpecifierPublic)
 	float                                         StartingTickerPosition;                            // 0x0014(0x0004)(ZeroConstructor, Transient, IsPlainOldData, NoDestructor, HasGetValueTypeHash, NativeAccessSpecifierPublic)
 };
-enum class ESkillCheckCustomType : uint8_t
-{
+enum class ESkillCheckCustomType : uint8_t {
 	VE_None = 0,
 	VE_OnPickedUp = 1,
 	VE_OnAttacked = 2,
@@ -29,8 +28,7 @@ enum class ESkillCheckCustomType : uint8_t
 	VE_Continuous = 14,
 	VE_S42P02 = 15,
 	VE_K38P03Continuous = 16,
-	VE_SnapOutOfIt = 17,
-	VE_MAX = 18,
+	VE_SnapOutOfIt = 17
 };
 enum class ETotemState : uint8_t
 {

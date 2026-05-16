@@ -146,7 +146,11 @@
     <FilesToPackage Include="$(TargetPath)" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="buf.cpp" />
     <ClCompile Include="driver.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="buf.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
